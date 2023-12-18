@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/alejandrogonzalez/Desktop/WebNew/IPR-Roomba-Project--2nd-draft-",
+      "program": "/Users/alejandrogonzalez/Desktop/WebNew/IPR-Roomba-Project--2nd-draft-/build/Debug/outDebug"
+    }
+  ]
+}
