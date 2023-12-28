@@ -1,89 +1,136 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include "simula.h"
-
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <math.h> 
+#include "simula.h" 
+#define TIME 100000
 struct coor{
   int x, y;
 };
 
-int rand_angle(int angle, int cases){  // Genera un angulo random en 7 posiciones posibles 0-360
-  angle = rand()%cases;                // ESTA IMPLEMENTACION FUERZA A TENER EL DOCK EN LA PARED IZQUIERDA
-  switch (angle)
-  {
-  case 0:
-    angle = 0;
-    break;
-  
-  case 1:
-    angle = 45;
-    break;
+float prev_x_positions[TIME];
+float prev_y_positions[TIME];
+int positions_index = 0;
+int charge_cycles = 0;
 
-  case 2:
-    angle = 90;
-    break;
+void to_home(){
+  sensor_t rob = rmb_state();
 
-  case 3:
-    angle = 135;
-    break;
+  // Check if the battery is running low
+  if (rmb_battery() < 300) {
+    for (int i = positions_index - 1; i >= 0; i--) {
+      float prev_x = prev_x_positions[i];
+      float prev_y = prev_y_positions[i];
 
-  case 4:
-    angle = 180;
-    break;
+      // Check if the current position has been visited before
+      for (int j = 0; j < i; j++) {
+        if (prev_x_positions[j] == rob.x && prev_y_positions[j] == rob.y) {
+          // If the current position has been visited before, continue from the last visited position
+          i = j;
+          prev_x = prev_x_positions[i];
+          prev_y = prev_y_positions[i];
+          break;
+        }
+      }
 
-  case 5:
-    angle = 225;
-    break;
+      float dist_x = prev_x - rob.x;
+      float dist_y = prev_y - rob.y;
 
-  case 6: 
-    angle = 270;
-    break;
-  
-  case 7: 
-    angle = 315;
-    break;
+      // Calculate angle to previous position
+      float angle_to_prev = atan2(dist_y, dist_x);
 
-  default:
-    break;
+      // Calculate the difference between the current heading and the angle to the previous position
+      float heading_difference = angle_to_prev - rob.head;
+
+      // Turn to face the previous position
+      rmb_turn(heading_difference);
+
+      rmb_forward();
+
+      if(rmb_ifr() > 0) {
+        while(rmb_ifr() > 0) {
+          rmb_clean();
+        }
+      }
+
+      if (rmb_at_base()) {
+        while(rmb_battery() < 1000) {
+          rmb_load();
+        }
+        positions_index = 3;
+        charge_cycles ++;
+        break;
+      }
+
+      // Update the current state of the Roomba and recalculate the distance to the previous position
+      rob = rmb_state();
+    }
   }
-  return angle;
 }
-
 
 void on_start(){
   struct coor base;
   sensor_t rob;
+  float angle;
   rmb_awake(&base.x, &base.y);
-  int angle = rand_angle(&angle, 5); // Gira cabeza de manera aleatoria en el 1er y 4o cuadrante, step = pi/2
-  rmb_turn(rob.head+angle);
-  rmb_forward();
+  //random heading in a 180º arc
+  rob = rmb_state();
+  angle = rand()  / (float)RAND_MAX * M_PI - M_PI_2; 
+  rmb_turn(rob.head + angle);
 }
 
+void cyclic_behav(struct coor coor, struct coor base){
+  sensor_t rob = rmb_state();
 
-void cyclic_behav(){  // Gira cabeza, avanza, detecta obstaculos_gira cabeza if TRUE, detecta suciedad_limpieza if TRUE, carga if DOCK=TRUE
-  int angle = rand_angle(&angle, 8); // Gira cabeza de manera aleatoria entre el 1er y 4o cuadrante, step = pi/2
-  rmb_turn(angle);
-  
-  //da un paso en la dirección actual
-  rmb_forward();
+  prev_x_positions[positions_index] = rob.x;
+  prev_y_positions[positions_index] = rob.y;
+  positions_index++;
 
-  //detección de obstáculos
-  if(rmb_bumper()){
-    //gira un ángulo aleatorio
-    angle = rand_angle(&angle, 8);
+
+  if (!rmb_bumper()) {
+    rmb_forward();
+
+      while(rmb_battery() < 300) {
+          to_home();
+      }
+
+      if (rmb_ifr() > 0)
+      {
+        while(rmb_ifr() > 0) {
+          rmb_clean();
+        }
+
+      if (charge_cycles <= 2) {
+        rmb_turn(-rob.head);
+        
+        for(int k = 0; k < 4; k++) {
+        for (int i = 0; i <= 4; i++) {
+          for (int j = 0; j < k+1; j++){
+            if(rmb_ifr() > 0) {
+              while(rmb_ifr() > 0) {
+                rmb_clean();
+              }
+            }
+            rmb_forward();
+          }
+        rmb_turn(M_PI_2);
+        }
+      }
+      }
+
+      float angle = rand() / (float)RAND_MAX * 2 * M_PI;
+      rmb_turn(angle);
+      }
+
+      if(rmb_at_base())
+        while(rmb_battery() < 500)
+          rmb_load();
+  } 
+
+  else {
+    float angle = rand() / (float)RAND_MAX * 2 * M_PI;
     rmb_turn(angle);
   }
-
-  //deteccion de suciedad
-  while(rmb_ifr() > 0)
-    rmb_clean();
-
-  //carga si se encuentra en la base
-  if(rmb_at_base())
-    while(rmb_battery() < 250)
-      rmb_load();
 }
-
 
 void on_stop(){
   visualize();
@@ -91,7 +138,7 @@ void on_stop(){
 
 
 int main(){
-  configure(on_start, cyclic_behav, on_stop, 2000);
+  configure(on_start, cyclic_behav, on_stop, TIME);
   run();
   return 0;
 }
